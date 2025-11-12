@@ -6,7 +6,7 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
 from sklearn.model_selection import train_test_split
 from model_architectuur import create_marker_detector_model
-from yolo_loss import YoloLikeLoss # <<< DE NIEUWE CUSTOM LOSS
+from yolo_loss import YoloLikeLoss # <<< DE NIEUWE CUSTOM LOSS WORDT GEÏMPORTEERD
 import os
 
 # --- Configuratie ---
@@ -19,11 +19,7 @@ RANDOM_SEED = 42
 def load_data(data_dir):
     """ 
     LAAD FUNCTIE VEREIST AANPASSINGEN! 
-    Dit is een placeholder-functie. Je moet dit vervangen door code die:
-    1. Alle .jpg/png bestanden uit 'data_dir' laadt, resizet en normaliseert (0-1).
-    2. De bijbehorende labels uit een CSV of JSON-bestand laadt.
-    
-    De dummy data hieronder simuleert het *resultaat* dat je nodig hebt.
+    Dit is een placeholder-functie die het resultaat van jouw echte data nabootst.
     """
     print(f"Laden van data gesimuleerd voor: {data_dir}...")
     
@@ -31,7 +27,7 @@ def load_data(data_dir):
     N = 500 # Aantal afbeeldingen
     
     # X: Afbeeldingen genormaliseerd tussen 0 en 1
-    X_data = np.random.rand(N, INPUT_SHAPE[0], INPUT_SHAPE[1], INPUT_SHAPE[2]).astype('float32') / 255.0
+    X_data = np.random.rand(N, INPUT_SHAPE[0], INPUT_SHAPE[1], INPUT_SHAPE[2]).astype('float32')
     
     # Y: Labels genormaliseerd tussen 0 en 1 [x_center, y_center, width, height, confidence]
     Y_data = np.random.rand(N, 5).astype('float32')
@@ -58,14 +54,14 @@ def train_detector(data_dir='./data/gelabelde_beelden', epochs=100, batch_size=3
     # 2. Model aanmaken en compileren
     model = create_marker_detector_model(input_shape=INPUT_SHAPE)
     
-    # Belangrijk: Gebruik de YoloLikeLoss
+    # *** BELANGRIJKE VERBETERING: GEBRUIK YoloLikeLoss IN PLAATS VAN 'mse' ***
     model.compile(
         optimizer=Adam(learning_rate=learning_rate),
-        loss=YoloLikeLoss(coord_weight=5.0), # <<< Hier wordt de custom loss gebruikt
+        loss=YoloLikeLoss(coord_weight=5.0), # <<< DE NIEUWE LOSS FUNCTIE
         metrics=['mae', 'mse']
     )
     
-    # 3. Callbacks (Om de beste versie op te slaan en vroegtijdig te stoppen)
+    # 3. Callbacks 
     model_checkpoint_callback = ModelCheckpoint(
         filepath=MODEL_SAVE_PATH,
         save_best_only=True,
@@ -87,7 +83,7 @@ def train_detector(data_dir='./data/gelabelde_beelden', epochs=100, batch_size=3
         X_train, Y_train,
         epochs=epochs,
         batch_size=batch_size,
-        validation_data=(X_val, Y_val), # Gebruik de validatieset
+        validation_data=(X_val, Y_val), 
         callbacks=[model_checkpoint_callback, early_stopping],
         verbose=1
     )
