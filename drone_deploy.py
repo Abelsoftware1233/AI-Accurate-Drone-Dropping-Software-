@@ -1,21 +1,24 @@
-# drone_deploy.py
-
 import cv2
 import numpy as np
 import tensorflow as tf
-# Je moet de DroneKit bibliotheek installeren op je drone's computer
-# from dronekit import connect, VehicleMode, LocationGlobalRelative 
+# Importeer de custom loss, anders kan TF het model niet laden!
+from yolo_loss import YoloLikeLoss 
+# from dronekit import connect, VehicleMode, LocationGlobalRelative # Deactiveer DroneKit voor desktop testen
 
 # --- Configuratie ---
-MODEL_PATH = 'best_marker_detector.h5' # Het getrainde model
-TARGET_IMAGE_SIZE = (128, 128)        # De grootte gebruikt tijdens de training
-CAMERA_INDEX = 0                      # Index van de USB/CSI camera (meestal 0 of 1)
-# CONNECTION_STRING = '/dev/ttyACM0'  # Voor een echte drone connectie via seriële poort
+MODEL_PATH = 'best_marker_detector.h5' 
+TARGET_IMAGE_SIZE = (128, 128)        
+CAMERA_INDEX = 0                      
+# CONNECTION_STRING = '/dev/ttyACM0'  
 
 def load_ai_model():
     """Laad het getrainde AI-model van schijf."""
     try:
-        model = tf.keras.models.load_model(MODEL_PATH)
+        # Laad het model met de custom loss functie
+        model = tf.keras.models.load_model(
+            MODEL_PATH, 
+            custom_objects={'YoloLikeLoss': YoloLikeLoss}
+        )
         print("AI Model geladen.")
         return model
     except Exception as e:
@@ -25,40 +28,37 @@ def load_ai_model():
 def predict_correction(model, frame):
     """
     Analyseert een cameraframe en voorspelt de positie van de marker.
-    
-    Returns: (error_x, error_y): De benodigde correctie in pixels/eenheden.
     """
     
-    # 1. Beeld voorbereiden voor het model
+    # 1. Beeld voorbereiden
     processed_frame = cv2.resize(frame, TARGET_IMAGE_SIZE)
     processed_frame = processed_frame.astype('float32') / 255.0
-    input_tensor = np.expand_dims(processed_frame, axis=0) # Maak een batch van 1
+    input_tensor = np.expand_dims(processed_frame, axis=0)
     
     # 2. Voorspelling
-    prediction = model.predict(input_tensor)[0]
+    prediction = model.predict(input_tensor, verbose=0)[0]
     
     # 3. Ontpak de voorspelling
     x_center, y_center, width, height, confidence = prediction
     
-    # --- De logica voor GPS-correctie ---
-    
-    if confidence > 0.7: # Alleen actie ondernemen als het model zeker is
+    if confidence > 0.7:
         frame_width, frame_height = frame.shape[1], frame.shape[0]
         
-        # De voorspelde coördinaten terugschalen naar de originele framegrootte
+        # De voorspelde coördinaten terugschalen
         real_x = int(x_center * frame_width)
         real_y = int(y_center * frame_height)
         
-        # Bereken de afwijking (in pixels) van het midden van het beeld
+        # Bereken de afwijking (in pixels) van het midden
         error_x = real_x - (frame_width / 2)
         error_y = real_y - (frame_height / 2)
         
-        # NOTE: Je moet deze pixel-afwijking later omzetten naar METERS of graden
-        # op basis van de hoogte van de drone. Dit is de Physics/IMU-stap.
-        
-        return error_x, error_y, confidence
+        # VISUALISATIE (voor debuggen)
+        cv2.circle(frame, (real_x, real_y), 10, (0, 255, 255), 2)
+        cv2.line(frame, (frame_width // 2, 0), (frame_width // 2, frame_height), (255, 0, 0), 1)
+
+        return error_x, error_y, confidence, frame
     
-    return 0, 0, 0 # Geen marker gevonden of confidence te laag
+    return 0, 0, 0, frame # Geen marker gevonden
 
 
 def main_drone_loop():
@@ -67,42 +67,40 @@ def main_drone_loop():
     if model is None:
         return
 
-    # --- Drone Verbinding (Uitgeschakeld in dit script) ---
-    # print(f"Verbinden met drone: {CONNECTION_STRING}...")
-    # vehicle = connect(CONNECTION_STRING, wait_ready=True)
-    # print("Drone verbonden.")
-
     # Camera initialiseren
     cap = cv2.VideoCapture(CAMERA_INDEX)
     if not cap.isOpened():
         print("Fout: Camera kan niet geopend worden.")
         return
 
-    print("\n--- Starten van de AI-detectielus ---")
+    print("\n--- Starten van de AI-detectielus (Druk op 'q' om te stoppen) ---")
+    
     while True:
         ret, frame = cap.read()
         if not ret:
             print("Kan geen frame van de camera krijgen.")
             break
         
-        # Berekent de correctie
-        error_x, error_y, confidence = predict_correction(model, frame)
+        # Berekent de correctie en voegt debug-info toe aan frame
+        error_x, error_y, confidence, frame_processed = predict_correction(model, frame)
         
         if confidence > 0.7:
             print(f"Marker gedetecteerd! Conf: {confidence:.2f}, Corr: X={error_x:.2f}, Y={error_y:.2f}")
             
-            # --- Hier zou de DroneKit/MAVLink code komen ---
-            # Bijvoorbeeld:
-            # Als error_x positief is, moet de drone iets naar links bewegen
-            # correction_in_meters_x = error_x * pixel_to_meter_factor(vehicle.location.global_relative_frame.alt)
-            # vehicle.send_mavlink_command(MAV_CMD_DO_SET_POSITION, ...) 
-            # -----------------------------------------------
+            # TODO: IMPLEMENTEER HIER DE PIXEL-NAAR-METER/PID-LOGICA
+            # vehicle.send_mavlink_command(...)
             
         else:
-            print("Geen marker of lage confidence. Gebruik GPS.")
+            cv2.putText(frame_processed, "Zoeken...", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
             
-        # Voorkom overbelasting van de CPU
-        cv2.waitKey(1)
+        # Toon het beeld (deactiveer dit voor headless deployment)
+        cv2.imshow("Drone Feed", frame_processed)
         
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+    
 if __name__ == '__main__':
     main_drone_loop()
