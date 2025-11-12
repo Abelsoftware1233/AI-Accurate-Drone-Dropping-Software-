@@ -1,0 +1,15 @@
+# requirements.txt
+
+# Machine Learning & Computer Vision
+tensorflow>=2.10.0
+numpy>=1.22.0
+opencv-python>=4.7.0
+
+# Data Management
+pandas>=1.5.0
+
+# Drone Interface (Vervang door de werkelijke bibliotheek als je een ander protocol gebruikt)
+# DroneKit is populair voor APM/Pixhawk-gebaseerde drones
+dronekit>=2.9.2
+# Of PyMAVLink/MAVProxy als je rechtstreeks MAVLink-commando's wilt sturen
+# pymavlink
