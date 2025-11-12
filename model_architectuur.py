@@ -29,3 +29,4 @@ def create_marker_detector_model(input_shape=(128, 128, 3), num_outputs=5):
     model = Model(inputs=inputs, outputs=predictions)
     
     return model
+
